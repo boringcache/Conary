@@ -1,0 +1,27 @@
+name: Connect BoringCache
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  connect:
+    name: Connect GitHub Actions to BoringCache
+    if: github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Install the released BoringCache CLI
+        run: |
+          curl -fsSL https://install.boringcache.com/install.sh | sh
+          printf '%s/.local/bin\n' "$HOME" >> "$GITHUB_PATH"
+      - name: Connect repository with GitHub OIDC
+        run: boringcache ci connect --oidc-provider github-actions

@@ -1,0 +1,58 @@
+name: BoringCache Arch rolling
+
+on:
+  workflow_dispatch:
+    inputs:
+      cli_version:
+        description: Optional exact BoringCache CLI release or prerelease tag
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: boringcache-arch-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  commit:
+    name: BoringCache Arch commit
+    if: github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    container:
+      image: docker.io/library/archlinux@sha256:fe6972d4dc1f660c0c10f4c41b2de8986bab89e7e2955378f8beadb8ebcd7433
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: operator
+          persist-credentials: false
+      - uses: ./operator/.github/actions/boringcache-arch-setup
+      - name: Build and check the native Arch producers
+        id: cache
+        uses: boringcache/one@90111526eb218a7f1e119ac2b29f765bd4d82734 # v1.21.0
+        with:
+          mode: sccache
+          working-directory: operator
+          cli-version: ${{ inputs.cli_version }}
+          trust-policy: publish
+          fail-on-cache-error: true
+      - name: Retain source, timing and native cache evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: arch-commit-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/validation
+            ${{ steps.cache.outputs.evidence-path }}

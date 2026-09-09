@@ -1,0 +1,53 @@
+name: Set up the pinned Arch producer validation
+description: Install the upstream native lane dependencies and check out exact producer source.
+outputs:
+  source:
+    description: Exact upstream producer commit.
+    value: ${{ steps.source.outputs.sha }}
+runs:
+  using: composite
+  steps:
+    - name: Install pinned Arch producer dependencies
+      shell: bash
+      run: |
+        set -euo pipefail
+        sed -i '/^\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
+        printf 'Server = https://archive.archlinux.org/repos/2026/08/02/$repo/os/$arch\n' > /etc/pacman.d/mirrorlist
+        pacman -Syu --noconfirm
+        pacman -S --noconfirm base-devel openssl xz libseccomp pkgconf cmake perl clang rustup git python jq
+        pacman -Scc --noconfirm
+        rustup default 1.98.0
+        rustup component add clippy
+    - name: Read the captured upstream commit
+      id: source
+      shell: bash
+      run: |
+        set -euo pipefail
+        source="$(cat operator/.github/boringcache-upstream)"
+        [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+        printf 'sha=%s\n' "$source" >> "$GITHUB_OUTPUT"
+    - name: Check out exact producer source
+      uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        path: producer
+        ref: ${{ steps.source.outputs.sha }}
+        persist-credentials: false
+    - name: Require a clean source and empty target
+      shell: bash
+      env:
+        PRODUCER_COMMIT: ${{ steps.source.outputs.sha }}
+      run: |
+        set -euo pipefail
+        cd producer
+        [[ "$(git rev-parse HEAD)" == "$PRODUCER_COMMIT" ]]
+        [[ -z "$(git status --porcelain)" ]]
+        [[ ! -e target ]]
+        mkdir -p "$RUNNER_TEMP/validation"
+        git rev-parse HEAD > "$RUNNER_TEMP/validation/source.txt"
+        git -C ../operator rev-parse HEAD > "$RUNNER_TEMP/validation/workflow-source.txt"
+        pacman -Q > "$RUNNER_TEMP/validation/arch-packages.txt"
+        rustc -vV > "$RUNNER_TEMP/validation/rustc.txt"
+        cargo -vV > "$RUNNER_TEMP/validation/cargo.txt"
+        pkg-config --modversion libalpm > "$RUNNER_TEMP/validation/libalpm.txt"
+        sha256sum Cargo.lock Cargo.toml > "$RUNNER_TEMP/validation/cargo-inputs.sha256"
+        uname -a > "$RUNNER_TEMP/validation/runner.txt"

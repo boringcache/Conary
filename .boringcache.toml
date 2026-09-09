@@ -1,0 +1,7 @@
+workspace = "boringcache/conary-onboarding"
+
+[adapters.sccache]
+tag = "arch-20260802-rust-1-98-alpm"
+no-git = true
+fail-on-cache-error = true
+command = ["bash", ".github/boringcache-arch.sh"]
