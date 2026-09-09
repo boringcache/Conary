@@ -41,7 +41,7 @@ jobs:
         uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
         with:
           tool: sccache@0.17.0
-      - name: Build and check the native Arch producers
+      - name: Configure the BoringCache compiler backend
         id: cache
         uses: boringcache/one@90111526eb218a7f1e119ac2b29f765bd4d82734 # v1.21.0
         with:
@@ -50,6 +50,9 @@ jobs:
           cli-version: ${{ inputs.cli_version }}
           trust-policy: publish
           fail-on-cache-error: true
+      - name: Build and check the native Arch producers
+        working-directory: operator
+        run: bash .github/boringcache-arch.sh
       - name: Retain source, timing and native cache evidence
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
