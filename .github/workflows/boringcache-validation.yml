@@ -316,6 +316,18 @@ jobs:
           key: ${{ steps.setup.outputs.compiler-key }}-${{ steps.setup.outputs.source }}
           restore-keys: ${{ steps.setup.outputs.compiler-key }}-
           fail-on-cache-miss: true
+      - name: Require the published Cargo target before the warm build
+        if: matrix.provider == 'BoringCache'
+        id: lookup
+        uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
+        with:
+          mode: cargo
+          working-directory: operator/.github/boringcache-remi
+          cli-version: ${{ inputs.cli_version }}
+          trust-policy: restore
+          lookup-only: true
+          fail-on-cache-error: true
+          fail-on-cache-miss: true
       - name: Start build measurement
         run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Build Remi with the upstream cache policy
@@ -339,7 +351,7 @@ jobs:
           cli-version: ${{ inputs.cli_version }}
           trust-policy: restore
           fail-on-cache-error: true
-          fail-on-cache-miss: true
+          fail-on-cache-miss: false
       - name: Record build boundary and check the binary
         run: |
           printf 'phase\telapsed_ms\nbuild_step\t%s\n' "$(( $(date +%s%3N) - BUILD_STARTED ))" > "$RUNNER_TEMP/remi-comparison/timings.tsv"
@@ -372,6 +384,7 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/remi-comparison
+            ${{ steps.lookup.outputs.evidence-path }}
             ${{ steps.cache.outputs.evidence-path }}
 
   remi-commit:
