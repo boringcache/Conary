@@ -44,7 +44,7 @@ runs:
         [[ ! -e target ]]
         mkdir -p "$RUNNER_TEMP/validation"
         git rev-parse HEAD > "$RUNNER_TEMP/validation/source.txt"
-        git -C ../operator rev-parse HEAD > "$RUNNER_TEMP/validation/workflow-source.txt"
+        printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/validation/workflow-source.txt"
         pacman -Q > "$RUNNER_TEMP/validation/arch-packages.txt"
         rustc -vV > "$RUNNER_TEMP/validation/rustc.txt"
         cargo -vV > "$RUNNER_TEMP/validation/cargo.txt"
