@@ -1,14 +1,25 @@
-name: BoringCache Arch validation
+name: BoringCache Conary validation
 
 on:
   workflow_dispatch:
     inputs:
+      workload:
+        description: Compare the Remi release build or retain the earlier Arch compiler diagnostic
+        required: false
+        default: remi
+        type: choice
+        options: [remi, arch]
+      source_sha:
+        description: Optional full upstream SHA for Remi; empty uses the committed seed
+        required: false
+        default: ""
+        type: string
       phase:
         description: Run the fresh comparison or read an existing seed on a fresh runner
         required: false
         default: fresh
         type: choice
-        options: [fresh, warm]
+        options: [fresh, warm, commit]
       skip_uncached:
         description: Reuse the retained uncached sample for this exact source and runner configuration
         required: false
@@ -25,7 +36,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: boringcache-arch-${{ github.ref }}
+  group: boringcache-conary-${{ github.ref }}
   cancel-in-progress: false
 
 env:
@@ -34,7 +45,7 @@ env:
 jobs:
   uncached:
     name: No cache Arch uncached
-    if: github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation' && !inputs.skip_uncached && inputs.phase != 'warm'
+    if: inputs.workload == 'arch' && github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation' && !inputs.skip_uncached && inputs.phase != 'warm'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     container:
@@ -64,7 +75,7 @@ jobs:
 
   cold:
     name: BoringCache Arch cold
-    if: github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation' && inputs.phase != 'warm'
+    if: inputs.workload == 'arch' && github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation' && inputs.phase != 'warm'
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     container:
@@ -109,7 +120,7 @@ jobs:
   warm:
     name: BoringCache Arch warm
     needs: cold
-    if: always() && !cancelled() && github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation' && (needs.cold.result == 'success' || inputs.phase == 'warm')
+    if: inputs.workload == 'arch' && always() && !cancelled() && github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation' && (needs.cold.result == 'success' || inputs.phase == 'warm')
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     container:
@@ -150,4 +161,317 @@ jobs:
           if-no-files-found: error
           path: |
             ${{ runner.temp }}/validation
+            ${{ steps.cache.outputs.evidence-path }}
+
+  remi-cold:
+    name: ${{ matrix.provider }} Remi cold
+    if: inputs.workload == 'remi' && github.repository == 'boringcache/Conary' && (github.ref == 'refs/heads/boringcache-validation' || github.ref == 'refs/heads/perf/680-cargo-cache') && inputs.phase == 'fresh'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [GitHub, BoringCache]
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_ENCODED_RUSTFLAGS: ""
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUSTFLAGS: ""
+      SCCACHE_CACHE_SIZE: 4G
+      SCCACHE_LOCAL_RW_MODE: READ_WRITE
+    steps:
+      - name: Start job measurement
+        run: echo "COMPARISON_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: operator
+          persist-credentials: false
+      - uses: ./operator/.github/actions/boringcache-remi-setup
+        id: setup
+        with:
+          source-sha: ${{ inputs.source_sha }}
+      - name: Restore upstream Cargo dependency archives
+        if: matrix.provider == 'GitHub' && 'cold' != 'cold'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
+          restore-keys: remi-comparison-v1-deps-
+          fail-on-cache-miss: false
+      - name: Restore upstream bounded compiler archive
+        if: matrix.provider == 'GitHub' && 'cold' != 'cold'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/remi-release-sccache
+          key: ${{ steps.setup.outputs.compiler-key }}-${{ steps.setup.outputs.source }}
+          restore-keys: ${{ steps.setup.outputs.compiler-key }}-
+          fail-on-cache-miss: false
+      - name: Start build measurement
+        run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - name: Build Remi with the upstream cache policy
+        if: matrix.provider == 'GitHub'
+        working-directory: operator/.github/boringcache-remi
+        env:
+          RUSTC_WRAPPER: sccache
+        run: |
+          set -euo pipefail
+          sccache --zero-stats
+          cargo build -p remi --release --locked --timings --manifest-path ../../../producer/Cargo.toml
+          sccache --show-stats --stats-format json > "$RUNNER_TEMP/remi-comparison/sccache-stats.json"
+          sccache --stop-server
+      - name: Build Remi with the full Cargo adapter
+        if: matrix.provider == 'BoringCache'
+        id: cache
+        uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
+        with:
+          mode: cargo
+          working-directory: operator/.github/boringcache-remi
+          cli-version: ${{ inputs.cli_version }}
+          trust-policy: publish
+          fail-on-cache-error: true
+          fail-on-cache-miss: false
+      - name: Record build boundary and check the binary
+        run: |
+          printf 'phase\telapsed_ms\nbuild_step\t%s\n' "$(( $(date +%s%3N) - BUILD_STARTED ))" > "$RUNNER_TEMP/remi-comparison/timings.tsv"
+          bash operator/.github/boringcache-remi/verify.sh
+      - name: Save upstream Cargo dependency archives
+        if: matrix.provider == 'GitHub' && 'cold' != 'warm'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
+      - name: Save upstream bounded compiler archive
+        if: matrix.provider == 'GitHub' && 'cold' != 'warm'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/remi-release-sccache
+          key: ${{ steps.setup.outputs.compiler-key }}-${{ steps.setup.outputs.source }}
+      - name: Record total setup, build, verification and cache time
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/remi-comparison"
+          printf 'job_before_evidence_upload\t%s\n' "$(( $(date +%s%3N) - COMPARISON_STARTED ))" >> "$RUNNER_TEMP/remi-comparison/timings.tsv"
+      - name: Retain comparison evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: remi-${{ matrix.provider }}-cold-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/remi-comparison
+            ${{ steps.cache.outputs.evidence-path }}
+
+  remi-warm:
+    name: ${{ matrix.provider }} Remi warm
+    needs: remi-cold
+    if: always() && !cancelled() && inputs.workload == 'remi' && github.repository == 'boringcache/Conary' && (github.ref == 'refs/heads/boringcache-validation' || github.ref == 'refs/heads/perf/680-cargo-cache') && (needs.remi-cold.result == 'success' || inputs.phase == 'warm')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [GitHub, BoringCache]
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_ENCODED_RUSTFLAGS: ""
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUSTFLAGS: ""
+      SCCACHE_CACHE_SIZE: 4G
+      SCCACHE_LOCAL_RW_MODE: READ_ONLY
+    steps:
+      - name: Start job measurement
+        run: echo "COMPARISON_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: operator
+          persist-credentials: false
+      - uses: ./operator/.github/actions/boringcache-remi-setup
+        id: setup
+        with:
+          source-sha: ${{ inputs.source_sha }}
+      - name: Restore upstream Cargo dependency archives
+        if: matrix.provider == 'GitHub' && 'warm' != 'cold'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
+          restore-keys: remi-comparison-v1-deps-
+          fail-on-cache-miss: true
+      - name: Restore upstream bounded compiler archive
+        if: matrix.provider == 'GitHub' && 'warm' != 'cold'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/remi-release-sccache
+          key: ${{ steps.setup.outputs.compiler-key }}-${{ steps.setup.outputs.source }}
+          restore-keys: ${{ steps.setup.outputs.compiler-key }}-
+          fail-on-cache-miss: true
+      - name: Start build measurement
+        run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - name: Build Remi with the upstream cache policy
+        if: matrix.provider == 'GitHub'
+        working-directory: operator/.github/boringcache-remi
+        env:
+          RUSTC_WRAPPER: sccache
+        run: |
+          set -euo pipefail
+          sccache --zero-stats
+          cargo build -p remi --release --locked --timings --manifest-path ../../../producer/Cargo.toml
+          sccache --show-stats --stats-format json > "$RUNNER_TEMP/remi-comparison/sccache-stats.json"
+          sccache --stop-server
+      - name: Build Remi with the full Cargo adapter
+        if: matrix.provider == 'BoringCache'
+        id: cache
+        uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
+        with:
+          mode: cargo
+          working-directory: operator/.github/boringcache-remi
+          cli-version: ${{ inputs.cli_version }}
+          trust-policy: restore
+          fail-on-cache-error: true
+          fail-on-cache-miss: true
+      - name: Record build boundary and check the binary
+        run: |
+          printf 'phase\telapsed_ms\nbuild_step\t%s\n' "$(( $(date +%s%3N) - BUILD_STARTED ))" > "$RUNNER_TEMP/remi-comparison/timings.tsv"
+          bash operator/.github/boringcache-remi/verify.sh
+      - name: Save upstream Cargo dependency archives
+        if: matrix.provider == 'GitHub' && 'warm' != 'warm'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
+      - name: Save upstream bounded compiler archive
+        if: matrix.provider == 'GitHub' && 'warm' != 'warm'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/remi-release-sccache
+          key: ${{ steps.setup.outputs.compiler-key }}-${{ steps.setup.outputs.source }}
+      - name: Record total setup, build, verification and cache time
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/remi-comparison"
+          printf 'job_before_evidence_upload\t%s\n' "$(( $(date +%s%3N) - COMPARISON_STARTED ))" >> "$RUNNER_TEMP/remi-comparison/timings.tsv"
+      - name: Retain comparison evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: remi-${{ matrix.provider }}-warm-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/remi-comparison
+            ${{ steps.cache.outputs.evidence-path }}
+
+  remi-commit:
+    name: ${{ matrix.provider }} Remi commit
+    if: inputs.workload == 'remi' && github.repository == 'boringcache/Conary' && (github.ref == 'refs/heads/boringcache-validation' || github.ref == 'refs/heads/perf/680-cargo-cache') && inputs.phase == 'commit'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [GitHub, BoringCache]
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_ENCODED_RUSTFLAGS: ""
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+      RUSTFLAGS: ""
+      SCCACHE_CACHE_SIZE: 4G
+      SCCACHE_LOCAL_RW_MODE: READ_WRITE
+    steps:
+      - name: Start job measurement
+        run: echo "COMPARISON_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          path: operator
+          persist-credentials: false
+      - uses: ./operator/.github/actions/boringcache-remi-setup
+        id: setup
+        with:
+          source-sha: ${{ inputs.source_sha }}
+      - name: Restore upstream Cargo dependency archives
+        if: matrix.provider == 'GitHub' && 'commit' != 'cold'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
+          restore-keys: remi-comparison-v1-deps-
+          fail-on-cache-miss: false
+      - name: Restore upstream bounded compiler archive
+        if: matrix.provider == 'GitHub' && 'commit' != 'cold'
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/remi-release-sccache
+          key: ${{ steps.setup.outputs.compiler-key }}-${{ steps.setup.outputs.source }}
+          restore-keys: ${{ steps.setup.outputs.compiler-key }}-
+          fail-on-cache-miss: false
+      - name: Start build measurement
+        run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
+      - name: Build Remi with the upstream cache policy
+        if: matrix.provider == 'GitHub'
+        working-directory: operator/.github/boringcache-remi
+        env:
+          RUSTC_WRAPPER: sccache
+        run: |
+          set -euo pipefail
+          sccache --zero-stats
+          cargo build -p remi --release --locked --timings --manifest-path ../../../producer/Cargo.toml
+          sccache --show-stats --stats-format json > "$RUNNER_TEMP/remi-comparison/sccache-stats.json"
+          sccache --stop-server
+      - name: Build Remi with the full Cargo adapter
+        if: matrix.provider == 'BoringCache'
+        id: cache
+        uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
+        with:
+          mode: cargo
+          working-directory: operator/.github/boringcache-remi
+          cli-version: ${{ inputs.cli_version }}
+          trust-policy: publish
+          fail-on-cache-error: true
+          fail-on-cache-miss: false
+      - name: Record build boundary and check the binary
+        run: |
+          printf 'phase\telapsed_ms\nbuild_step\t%s\n' "$(( $(date +%s%3N) - BUILD_STARTED ))" > "$RUNNER_TEMP/remi-comparison/timings.tsv"
+          bash operator/.github/boringcache-remi/verify.sh
+      - name: Save upstream Cargo dependency archives
+        if: matrix.provider == 'GitHub' && 'commit' != 'warm'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
+      - name: Save upstream bounded compiler archive
+        if: matrix.provider == 'GitHub' && 'commit' != 'warm'
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
+        with:
+          path: ${{ runner.temp }}/remi-release-sccache
+          key: ${{ steps.setup.outputs.compiler-key }}-${{ steps.setup.outputs.source }}
+      - name: Record total setup, build, verification and cache time
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/remi-comparison"
+          printf 'job_before_evidence_upload\t%s\n' "$(( $(date +%s%3N) - COMPARISON_STARTED ))" >> "$RUNNER_TEMP/remi-comparison/timings.tsv"
+      - name: Retain comparison evidence
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: remi-${{ matrix.provider }}-commit-${{ github.run_id }}-${{ github.run_attempt }}
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/remi-comparison
             ${{ steps.cache.outputs.evidence-path }}

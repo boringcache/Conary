@@ -1,0 +1,93 @@
+name: Set up the Remi release comparison
+description: Prepare exact upstream source and the native Remi release prerequisites.
+inputs:
+  source-sha:
+    description: Optional exact upstream source; empty uses the committed pin.
+    default: ""
+outputs:
+  source:
+    description: Verified upstream commit.
+    value: ${{ steps.source.outputs.sha }}
+  compiler-key:
+    description: Upstream compiler-cache policy in an isolated comparison namespace.
+    value: ${{ steps.identity.outputs.compiler-key }}
+  dependency-key:
+    description: Upstream Cargo dependency policy in an isolated comparison namespace.
+    value: ${{ steps.identity.outputs.dependency-key }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve exact upstream source
+      id: source
+      shell: bash
+      env:
+        REQUESTED_SOURCE: ${{ inputs.source-sha }}
+      run: |
+        set -euo pipefail
+        source="${REQUESTED_SOURCE:-$(cat operator/.github/boringcache-remi/upstream)}"
+        [[ "$source" =~ ^[0-9a-f]{40}$ ]]
+        printf 'sha=%s\n' "$source" >> "$GITHUB_OUTPUT"
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        repository: FieldmouseWorks/Conary
+        path: producer
+        ref: ${{ steps.source.outputs.sha }}
+        fetch-depth: 0
+        persist-credentials: false
+    - name: Install native build dependencies
+      shell: bash
+      working-directory: producer
+      run: bash scripts/ci-install-ubuntu-packages.sh libseccomp-dev
+    - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+      with:
+        toolchain: 1.98.0
+    - uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
+      with:
+        tool: sccache@0.16.0
+    - name: Verify source and record build inputs
+      id: identity
+      shell: bash
+      working-directory: producer
+      env:
+        SOURCE_SHA: ${{ steps.source.outputs.sha }}
+      run: |
+        set -euo pipefail
+        [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+        git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+        [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+        [[ ! -e target ]]
+        [[ "$(rustc --version | awk '{print $2}')" == 1.98.0 ]]
+        [[ "$(sed -n 's/^rust-version = "\([^"]*\)"/\1/p' Cargo.toml)" == 1.98.0 ]]
+        evidence="$RUNNER_TEMP/remi-comparison"
+        mkdir -p "$evidence"
+        git rev-parse HEAD > "$evidence/source.txt"
+        git rev-parse 'HEAD^{tree}' > "$evidence/tree.txt"
+        printf '%s\n' "$GITHUB_SHA" > "$evidence/workflow-source.txt"
+        rustc -vV > "$evidence/rustc.txt"
+        cargo -vV > "$evidence/cargo.txt"
+        sccache --version > "$evidence/sccache-version.txt"
+        dpkg-query --show --showformat='${Package}=${Version}\n' libseccomp-dev > "$evidence/native-abi.txt"
+        cc --version > "$evidence/cc.txt"
+        sha256sum Cargo.lock Cargo.toml apps/remi/Cargo.toml \
+          .github/actions/setup-remi-candidate-compiler-cache/action.yml \
+          scripts/timed-linker.sh > "$evidence/cargo-inputs.sha256"
+        printf 'profile=release\nfeatures=default\nRUSTFLAGS=%s\nCARGO_ENCODED_RUSTFLAGS=%s\nCARGO_INCREMENTAL=%s\nCARGO_PROFILE_DEV_DEBUG=%s\nCARGO_PROFILE_TEST_DEBUG=%s\n' \
+          "$RUSTFLAGS" "$CARGO_ENCODED_RUSTFLAGS" "$CARGO_INCREMENTAL" \
+          "$CARGO_PROFILE_DEV_DEBUG" "$CARGO_PROFILE_TEST_DEBUG" > "$evidence/compiler-environment.txt"
+        identity="$(cat "$evidence/rustc.txt" "$evidence/cargo.txt" "$evidence/native-abi.txt" \
+          "$evidence/cc.txt" "$evidence/cargo-inputs.sha256" "$evidence/compiler-environment.txt" | sha256sum | cut -d ' ' -f 1)"
+        {
+          echo "compiler-key=remi-comparison-v1-compiler-$identity"
+          echo "dependency-key=remi-comparison-v1-deps-$(sha256sum Cargo.lock | cut -d ' ' -f 1)"
+        } >> "$GITHUB_OUTPUT"
+        {
+          echo "CONARY_GIT_COMMIT=$SOURCE_SHA"
+          echo 'CONARY_GIT_DIRTY=false'
+          echo "SCCACHE_DIR=$RUNNER_TEMP/remi-release-sccache"
+          echo "CONARY_REAL_LINKER=$(realpath "$(command -v cc)")"
+          echo "CONARY_LINK_TIMINGS_PATH=$evidence/link-timings.tsv"
+          echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$PWD/scripts/timed-linker.sh"
+        } >> "$GITHUB_ENV"
+        printf 'ImageOS=%s\nImageVersion=%s\n' "${ImageOS:-}" "${ImageVersion:-}" > "$evidence/runner-image.txt"
+        lscpu > "$evidence/cpu.txt"
+        : > "$evidence/link-timings.tsv"
