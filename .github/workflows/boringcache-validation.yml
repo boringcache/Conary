@@ -200,7 +200,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
-          restore-keys: remi-comparison-v2-deps-
+          restore-keys: remi-comparison-v3-deps-
           fail-on-cache-miss: false
       - name: Restore upstream bounded compiler archive
         if: startsWith(matrix.provider, 'GitHub') && 'cold' != 'cold'
@@ -214,13 +214,13 @@ jobs:
         run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Build Remi with the upstream cache policy
         if: startsWith(matrix.provider, 'GitHub')
-        working-directory: operator/.github/boringcache-remi
+        working-directory: producer
         env:
           RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           sccache --zero-stats
-          cargo build -p remi --release --locked --timings --manifest-path ../../../producer/Cargo.toml
+          cargo build -p remi --release --locked --timings
           sccache --show-stats --stats-format json > "$RUNNER_TEMP/remi-comparison/sccache-stats.json"
           sccache --stop-server
       - name: Build Remi with the full Cargo adapter
@@ -229,7 +229,7 @@ jobs:
         uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
         with:
           mode: cargo
-          working-directory: operator/.github/boringcache-remi
+          working-directory: producer
           cli-version: ${{ inputs.cli_version }}
           trust-policy: publish
           fail-on-cache-error: true
@@ -306,7 +306,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
-          restore-keys: remi-comparison-v2-deps-
+          restore-keys: remi-comparison-v3-deps-
           fail-on-cache-miss: true
       - name: Restore upstream bounded compiler archive
         if: startsWith(matrix.provider, 'GitHub') && 'warm' != 'cold'
@@ -322,7 +322,7 @@ jobs:
         uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
         with:
           mode: cargo
-          working-directory: operator/.github/boringcache-remi
+          working-directory: producer
           cli-version: ${{ inputs.cli_version }}
           trust-policy: restore
           lookup-only: true
@@ -332,13 +332,13 @@ jobs:
         run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Build Remi with the upstream cache policy
         if: startsWith(matrix.provider, 'GitHub')
-        working-directory: operator/.github/boringcache-remi
+        working-directory: producer
         env:
           RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           sccache --zero-stats
-          cargo build -p remi --release --locked --timings --manifest-path ../../../producer/Cargo.toml
+          cargo build -p remi --release --locked --timings
           sccache --show-stats --stats-format json > "$RUNNER_TEMP/remi-comparison/sccache-stats.json"
           sccache --stop-server
       - name: Build Remi with the full Cargo adapter
@@ -347,7 +347,7 @@ jobs:
         uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
         with:
           mode: cargo
-          working-directory: operator/.github/boringcache-remi
+          working-directory: producer
           cli-version: ${{ inputs.cli_version }}
           trust-policy: restore
           fail-on-cache-error: true
@@ -424,7 +424,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
-          restore-keys: remi-comparison-v2-deps-
+          restore-keys: remi-comparison-v3-deps-
           fail-on-cache-miss: false
       - name: Restore upstream bounded compiler archive
         if: startsWith(matrix.provider, 'GitHub') && 'commit' != 'cold'
@@ -438,13 +438,13 @@ jobs:
         run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Build Remi with the upstream cache policy
         if: startsWith(matrix.provider, 'GitHub')
-        working-directory: operator/.github/boringcache-remi
+        working-directory: producer
         env:
           RUSTC_WRAPPER: sccache
         run: |
           set -euo pipefail
           sccache --zero-stats
-          cargo build -p remi --release --locked --timings --manifest-path ../../../producer/Cargo.toml
+          cargo build -p remi --release --locked --timings
           sccache --show-stats --stats-format json > "$RUNNER_TEMP/remi-comparison/sccache-stats.json"
           sccache --stop-server
       - name: Build Remi with the full Cargo adapter
@@ -453,7 +453,7 @@ jobs:
         uses: boringcache/one@404b744a2053da4cf963f13f615f7fafe94f3cf7 # v1.30.1
         with:
           mode: cargo
-          working-directory: operator/.github/boringcache-remi
+          working-directory: producer
           cli-version: ${{ inputs.cli_version }}
           trust-policy: publish
           fail-on-cache-error: true

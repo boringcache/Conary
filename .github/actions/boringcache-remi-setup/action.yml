@@ -37,6 +37,11 @@ runs:
         ref: ${{ steps.source.outputs.sha }}
         fetch-depth: 0
         persist-credentials: false
+    - name: Expose the committed cache plan above the clean source checkout
+      shell: bash
+      run: |
+        cp operator/.github/boringcache-remi/.boringcache.toml "$GITHUB_WORKSPACE/.boringcache.toml"
+        cmp operator/.github/boringcache-remi/.boringcache.toml "$GITHUB_WORKSPACE/.boringcache.toml"
     - name: Install native build dependencies
       shell: bash
       working-directory: producer
@@ -68,6 +73,7 @@ runs:
         printf '%s\n' "$GITHUB_SHA" > "$evidence/workflow-source.txt"
         rustc -vV > "$evidence/rustc.txt"
         cargo -vV > "$evidence/cargo.txt"
+        sha256sum "$GITHUB_WORKSPACE/.boringcache.toml" > "$evidence/cache-plan.sha256"
         sccache --version > "$evidence/sccache-version.txt"
         dpkg-query --show --showformat='${Package}=${Version}\n' libseccomp-dev > "$evidence/native-abi.txt"
         cc --version > "$evidence/cc.txt"
@@ -80,8 +86,8 @@ runs:
         identity="$(cat "$evidence/rustc.txt" "$evidence/cargo.txt" "$evidence/native-abi.txt" \
           "$evidence/cc.txt" "$evidence/sccache-version.txt" "$evidence/cargo-inputs.sha256" "$evidence/compiler-environment.txt" | sha256sum | cut -d ' ' -f 1)"
         {
-          echo "compiler-key=remi-comparison-v2-compiler-$identity"
-          echo "dependency-key=remi-comparison-v2-deps-$(sha256sum Cargo.lock | cut -d ' ' -f 1)"
+          echo "compiler-key=remi-comparison-v3-compiler-$identity"
+          echo "dependency-key=remi-comparison-v3-deps-$(sha256sum Cargo.lock | cut -d ' ' -f 1)"
         } >> "$GITHUB_OUTPUT"
         {
           echo "CONARY_GIT_COMMIT=$SOURCE_SHA"
