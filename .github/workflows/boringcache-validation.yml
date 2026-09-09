@@ -3,6 +3,11 @@ name: BoringCache Arch validation
 on:
   workflow_dispatch:
     inputs:
+      skip_uncached:
+        description: Reuse the retained uncached sample for this exact source and runner configuration
+        required: false
+        default: false
+        type: boolean
       cli_version:
         description: Optional exact BoringCache CLI release or prerelease tag
         required: false
@@ -23,7 +28,7 @@ env:
 jobs:
   uncached:
     name: No cache Arch uncached
-    if: github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation'
+    if: github.repository == 'boringcache/Conary' && github.ref == 'refs/heads/boringcache-validation' && !inputs.skip_uncached
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     container:
@@ -66,6 +71,10 @@ jobs:
           path: operator
           persist-credentials: false
       - uses: ./operator/.github/actions/boringcache-arch-setup
+      - name: Install the native compiler-cache prerequisite
+        uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
+        with:
+          tool: sccache@0.17.0
       - name: Build and check the native Arch producers
         id: cache
         uses: boringcache/one@90111526eb218a7f1e119ac2b29f765bd4d82734 # v1.21.0
@@ -103,6 +112,10 @@ jobs:
           path: operator
           persist-credentials: false
       - uses: ./operator/.github/actions/boringcache-arch-setup
+      - name: Install the native compiler-cache prerequisite
+        uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
+        with:
+          tool: sccache@0.17.0
       - name: Build and check the native Arch producers
         id: cache
         uses: boringcache/one@90111526eb218a7f1e119ac2b29f765bd4d82734 # v1.21.0

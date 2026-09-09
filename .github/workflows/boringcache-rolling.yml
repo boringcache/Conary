@@ -37,6 +37,10 @@ jobs:
           path: operator
           persist-credentials: false
       - uses: ./operator/.github/actions/boringcache-arch-setup
+      - name: Install the native compiler-cache prerequisite
+        uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
+        with:
+          tool: sccache@0.17.0
       - name: Build and check the native Arch producers
         id: cache
         uses: boringcache/one@90111526eb218a7f1e119ac2b29f765bd4d82734 # v1.21.0
