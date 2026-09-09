@@ -51,3 +51,4 @@ runs:
         pkg-config --modversion libalpm > "$RUNNER_TEMP/validation/libalpm.txt"
         sha256sum Cargo.lock Cargo.toml > "$RUNNER_TEMP/validation/cargo-inputs.sha256"
         uname -a > "$RUNNER_TEMP/validation/runner.txt"
+        lscpu > "$RUNNER_TEMP/validation/cpu.txt"
