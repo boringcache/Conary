@@ -171,7 +171,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider: [GitHub, BoringCache]
+        provider: [GitHub 0.16, GitHub 0.17, BoringCache]
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_ENCODED_RUSTFLAGS: ""
@@ -191,18 +191,19 @@ jobs:
         id: setup
         with:
           source-sha: ${{ inputs.source_sha }}
+          sccache-version: ${{ matrix.provider == 'GitHub 0.16' && '0.16.0' || '0.17.0' }}
       - name: Restore upstream Cargo dependency archives
-        if: matrix.provider == 'GitHub' && 'cold' != 'cold'
+        if: startsWith(matrix.provider, 'GitHub') && 'cold' != 'cold'
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
-          restore-keys: remi-comparison-v1-deps-
+          restore-keys: remi-comparison-v2-deps-
           fail-on-cache-miss: false
       - name: Restore upstream bounded compiler archive
-        if: matrix.provider == 'GitHub' && 'cold' != 'cold'
+        if: startsWith(matrix.provider, 'GitHub') && 'cold' != 'cold'
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ runner.temp }}/remi-release-sccache
@@ -212,7 +213,7 @@ jobs:
       - name: Start build measurement
         run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Build Remi with the upstream cache policy
-        if: matrix.provider == 'GitHub'
+        if: startsWith(matrix.provider, 'GitHub')
         working-directory: operator/.github/boringcache-remi
         env:
           RUSTC_WRAPPER: sccache
@@ -238,7 +239,7 @@ jobs:
           printf 'phase\telapsed_ms\nbuild_step\t%s\n' "$(( $(date +%s%3N) - BUILD_STARTED ))" > "$RUNNER_TEMP/remi-comparison/timings.tsv"
           bash operator/.github/boringcache-remi/verify.sh
       - name: Save upstream Cargo dependency archives
-        if: matrix.provider == 'GitHub' && 'cold' != 'warm'
+        if: startsWith(matrix.provider, 'GitHub') && 'cold' != 'warm'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
@@ -246,7 +247,7 @@ jobs:
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
       - name: Save upstream bounded compiler archive
-        if: matrix.provider == 'GitHub' && 'cold' != 'warm'
+        if: startsWith(matrix.provider, 'GitHub') && 'cold' != 'warm'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ runner.temp }}/remi-release-sccache
@@ -276,7 +277,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider: [GitHub, BoringCache]
+        provider: [GitHub 0.16, GitHub 0.17, BoringCache]
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_ENCODED_RUSTFLAGS: ""
@@ -296,18 +297,19 @@ jobs:
         id: setup
         with:
           source-sha: ${{ inputs.source_sha }}
+          sccache-version: ${{ matrix.provider == 'GitHub 0.16' && '0.16.0' || '0.17.0' }}
       - name: Restore upstream Cargo dependency archives
-        if: matrix.provider == 'GitHub' && 'warm' != 'cold'
+        if: startsWith(matrix.provider, 'GitHub') && 'warm' != 'cold'
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
-          restore-keys: remi-comparison-v1-deps-
+          restore-keys: remi-comparison-v2-deps-
           fail-on-cache-miss: true
       - name: Restore upstream bounded compiler archive
-        if: matrix.provider == 'GitHub' && 'warm' != 'cold'
+        if: startsWith(matrix.provider, 'GitHub') && 'warm' != 'cold'
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ runner.temp }}/remi-release-sccache
@@ -317,7 +319,7 @@ jobs:
       - name: Start build measurement
         run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Build Remi with the upstream cache policy
-        if: matrix.provider == 'GitHub'
+        if: startsWith(matrix.provider, 'GitHub')
         working-directory: operator/.github/boringcache-remi
         env:
           RUSTC_WRAPPER: sccache
@@ -343,7 +345,7 @@ jobs:
           printf 'phase\telapsed_ms\nbuild_step\t%s\n' "$(( $(date +%s%3N) - BUILD_STARTED ))" > "$RUNNER_TEMP/remi-comparison/timings.tsv"
           bash operator/.github/boringcache-remi/verify.sh
       - name: Save upstream Cargo dependency archives
-        if: matrix.provider == 'GitHub' && 'warm' != 'warm'
+        if: startsWith(matrix.provider, 'GitHub') && 'warm' != 'warm'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
@@ -351,7 +353,7 @@ jobs:
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
       - name: Save upstream bounded compiler archive
-        if: matrix.provider == 'GitHub' && 'warm' != 'warm'
+        if: startsWith(matrix.provider, 'GitHub') && 'warm' != 'warm'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ runner.temp }}/remi-release-sccache
@@ -380,7 +382,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        provider: [GitHub, BoringCache]
+        provider: [GitHub 0.16, GitHub 0.17, BoringCache]
     env:
       CARGO_INCREMENTAL: "0"
       CARGO_ENCODED_RUSTFLAGS: ""
@@ -400,18 +402,19 @@ jobs:
         id: setup
         with:
           source-sha: ${{ inputs.source_sha }}
+          sccache-version: ${{ matrix.provider == 'GitHub 0.16' && '0.16.0' || '0.17.0' }}
       - name: Restore upstream Cargo dependency archives
-        if: matrix.provider == 'GitHub' && 'commit' != 'cold'
+        if: startsWith(matrix.provider, 'GitHub') && 'commit' != 'cold'
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
-          restore-keys: remi-comparison-v1-deps-
+          restore-keys: remi-comparison-v2-deps-
           fail-on-cache-miss: false
       - name: Restore upstream bounded compiler archive
-        if: matrix.provider == 'GitHub' && 'commit' != 'cold'
+        if: startsWith(matrix.provider, 'GitHub') && 'commit' != 'cold'
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ runner.temp }}/remi-release-sccache
@@ -421,7 +424,7 @@ jobs:
       - name: Start build measurement
         run: echo "BUILD_STARTED=$(date +%s%3N)" >> "$GITHUB_ENV"
       - name: Build Remi with the upstream cache policy
-        if: matrix.provider == 'GitHub'
+        if: startsWith(matrix.provider, 'GitHub')
         working-directory: operator/.github/boringcache-remi
         env:
           RUSTC_WRAPPER: sccache
@@ -447,7 +450,7 @@ jobs:
           printf 'phase\telapsed_ms\nbuild_step\t%s\n' "$(( $(date +%s%3N) - BUILD_STARTED ))" > "$RUNNER_TEMP/remi-comparison/timings.tsv"
           bash operator/.github/boringcache-remi/verify.sh
       - name: Save upstream Cargo dependency archives
-        if: matrix.provider == 'GitHub' && 'commit' != 'warm'
+        if: startsWith(matrix.provider, 'GitHub') && 'commit' != 'warm'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: |
@@ -455,7 +458,7 @@ jobs:
             ~/.cargo/git
           key: ${{ steps.setup.outputs.dependency-key }}-${{ steps.setup.outputs.source }}
       - name: Save upstream bounded compiler archive
-        if: matrix.provider == 'GitHub' && 'commit' != 'warm'
+        if: startsWith(matrix.provider, 'GitHub') && 'commit' != 'warm'
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ${{ runner.temp }}/remi-release-sccache

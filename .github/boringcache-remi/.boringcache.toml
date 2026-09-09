@@ -8,7 +8,7 @@ fail-on-cache-error = true
 command = ["cargo", "build", "-p", "remi", "--release", "--locked", "--timings", "--manifest-path", "../../../producer/Cargo.toml"]
 
 [adapters.sccache]
-tag = "remi-ubuntu2404-rust198-cargo-v1"
+tag = "remi-ubuntu2404-rust198-cargo-v2"
 no-git = true
 
 [profiles.remi-release]
@@ -16,17 +16,17 @@ entries = ["registry-cache", "registry-index", "git-db", "remi-target"]
 
 [entries.registry-cache]
 path = "~/.cargo/registry/cache"
-tag = "remi-cargo-v1-registry-cache"
+tag = "remi-cargo-v2-registry-cache"
 
 [entries.registry-index]
 path = "~/.cargo/registry/index"
-tag = "remi-cargo-v1-registry-index"
+tag = "remi-cargo-v2-registry-index"
 
 [entries.git-db]
 path = "~/.cargo/git/db"
-tag = "remi-cargo-v1-git-db"
+tag = "remi-cargo-v2-git-db"
 
 [entries.remi-target]
 kind = "cargo-target"
 path = "../../../producer/target"
-tag = "remi-ubuntu2404-rust198-cargo-v1-target"
+tag = "remi-ubuntu2404-rust198-cargo-v2-target"

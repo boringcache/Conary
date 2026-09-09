@@ -1,6 +1,9 @@
 name: Set up the Remi release comparison
 description: Prepare exact upstream source and the native Remi release prerequisites.
 inputs:
+  sccache-version:
+    description: Exact compiler cache version for this comparison row.
+    default: 0.17.0
   source-sha:
     description: Optional exact upstream source; empty uses the committed pin.
     default: ""
@@ -43,7 +46,7 @@ runs:
         toolchain: 1.98.0
     - uses: taiki-e/install-action@84f5ac3124727fb3d284d4d22ee9ab3654fd09a6 # v2
       with:
-        tool: sccache@0.16.0
+        tool: sccache@${{ inputs.sccache-version }}
     - name: Verify source and record build inputs
       id: identity
       shell: bash
@@ -75,10 +78,10 @@ runs:
           "$RUSTFLAGS" "$CARGO_ENCODED_RUSTFLAGS" "$CARGO_INCREMENTAL" \
           "$CARGO_PROFILE_DEV_DEBUG" "$CARGO_PROFILE_TEST_DEBUG" > "$evidence/compiler-environment.txt"
         identity="$(cat "$evidence/rustc.txt" "$evidence/cargo.txt" "$evidence/native-abi.txt" \
-          "$evidence/cc.txt" "$evidence/cargo-inputs.sha256" "$evidence/compiler-environment.txt" | sha256sum | cut -d ' ' -f 1)"
+          "$evidence/cc.txt" "$evidence/sccache-version.txt" "$evidence/cargo-inputs.sha256" "$evidence/compiler-environment.txt" | sha256sum | cut -d ' ' -f 1)"
         {
-          echo "compiler-key=remi-comparison-v1-compiler-$identity"
-          echo "dependency-key=remi-comparison-v1-deps-$(sha256sum Cargo.lock | cut -d ' ' -f 1)"
+          echo "compiler-key=remi-comparison-v2-compiler-$identity"
+          echo "dependency-key=remi-comparison-v2-deps-$(sha256sum Cargo.lock | cut -d ' ' -f 1)"
         } >> "$GITHUB_OUTPUT"
         {
           echo "CONARY_GIT_COMMIT=$SOURCE_SHA"
